@@ -47,6 +47,8 @@ src/
   wifi_manager.h      - WiFi, config portal, debug AP, and camera debug server
   openai_client.h     - OpenAI Responses API client with retry and DNS recovery
   web_ui.h            - config portal HTML rendering
+  apptest.cpp         - allows you to test a chip not connected to a calculator
+  camtool.cpp         - allows you to test settings for the camera in real time
 tools/
   build_program.py    - TI-BASIC source and tokenizer
   capture_serial.ps1  - serial log capture (timed, auto-detects COM port)
