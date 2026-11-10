@@ -3,8 +3,8 @@
 #include <stdint.h>
 
 // Link port pins (2.5mm jack)
-#define PIN_TIP   D0
-#define PIN_RING  D1
+#define PIN_TIP   D1
+#define PIN_RING  D0
 
 // Authentication
 #define PASSWORD  69420
@@ -24,7 +24,7 @@
 // OpenAI
 #define OPENAI_HOST   "api.openai.com"
 #define OPENAI_PATH   "/v1/responses"
-#define OPENAI_MODEL  "gpt-5.4"
+#define OPENAI_MODEL  "gpt-6-luna"
 
 // WiFi AP portals
 // Keep these TI-friendly so the calculator can display them cleanly.
@@ -75,7 +75,7 @@ static inline uint8_t normalizeCameraProfileValue(uint8_t profile) {
     "- If a label is unclear, briefly say the label is unclear, then use your best reading.\n" \
     "- Example format: mul3 +3 before = 00 or eax after = 00000024.\n" \
     "- If a graph would help, describe it in words using key points, intercepts, slope, direction, max/min, and where values go. Do not try to draw a graph.\n" \
-    "- After all answers, provide the work.\n" \
+    "- After all answers, provide the work, unless its multible choice.\n" \
     "- For table-fill questions, keep the work very short after the filled entries.\n" \
     "- Use short lines and newline breaks.\n" \
     "- Plaintext only. No markdown, no bullets, no code blocks, no LaTeX, no special formatting.\n" \
@@ -98,7 +98,7 @@ static inline uint8_t normalizeCameraProfileValue(uint8_t profile) {
     "Preserve exact visible labels when readable, like mul3, eax, before, after. " \
     "Example: mul3 +3 before = 00. eax after = 00000024. " \
     "If a graph would help, describe it in words only. " \
-    "Then give short work. " \
+    "Then give short work, unless its multible choice. " \
     "Plaintext only. No markdown, bullets, code blocks, LaTeX, or special formatting. " \
     "ASCII math only. End the final line exactly with: END OF MESSAGE."
 
