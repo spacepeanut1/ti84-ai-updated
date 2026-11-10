@@ -3,8 +3,8 @@
 #include <stdint.h>
 
 // Link port pins (2.5mm jack)
-#define PIN_TIP   D1
-#define PIN_RING  D0
+#define PIN_TIP   D0
+#define PIN_RING  D1
 
 // Authentication
 #define PASSWORD  69420
