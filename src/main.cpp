@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <CBL2.h>
 #include <TIVar.h>
+#include "esp_sleep.h"
 
 #include "camera.h"
 #include "config.h"
@@ -13,7 +14,7 @@ namespace {
 
 constexpr int kMaxDataLen = 4096;
 constexpr int kHeaderBufferLen = 16;
-constexpr int kMaxResponseLines = 72;
+constexpr int kMaxResponseLines = 160;
 constexpr int kResponseWindowLines = 5;
 constexpr unsigned long kHeartbeatIntervalMs = 10000;
 constexpr unsigned long kProgramSendDelayMs = 300;
@@ -67,6 +68,11 @@ bool previousResponseAvailable = false;
 String previousConversationResponseId = "";
 String queuedResponse = "";
 bool responseReady = false;
+bool powerOffPending = false;
+unsigned long powerOffRequestedAt = 0;
+unsigned long powerOffAt = 0;  // set once the reply has been read
+constexpr unsigned long kPowerOffGraceMs = 2000;  // keep the link running so the reply transfer can finish
+constexpr unsigned long kPowerOffReplyTimeoutMs = 10000;  // power off anyway if the calculator never reads the reply
 
 const String &blankResponseLine() {
     static const String line = []() {
@@ -448,9 +454,29 @@ void cmdConnect() {
     // "CONNECTED" or "WIFI FAILED" when the handshake finishes.
 }
 
+// Turns the ESP32 off until the power is cut or the reset button is pressed.
+// Deep sleep with no wake-up source: nothing wakes it except a reset or a power cycle.
+void powerOffChip() {
+    Serial.println("Powering off. Remove a battery (or press reset) to turn back on.");
+    Serial.flush();
+    if (WiFi.getMode() != WIFI_OFF) {
+        WifiManager::disconnect();              // WiFi radio off, setup portal stopped
+    }
+    if (Camera::initialized) esp_camera_deinit();   // stop the camera clock
+    pinMode(PIN_TIP, INPUT);                    // release the link lines (no pull-ups)
+    pinMode(PIN_RING, INPUT);
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    esp_deep_sleep_start();                     // does not return
+}
+
+// Second-page option (command 2): used to disconnect WiFi, now powers the chip off.
+// The reply goes out first so the calculator isn't left waiting; loop() then shuts down.
 void cmdDisconnect() {
-    WifiManager::disconnect();
-    queueResponse("DISCONNECTED");
+    queueResponse("CHIP OFF");
+    powerOffPending = true;
+    powerOffRequestedAt = millis();
+    powerOffAt = 0;
+    Serial.println("Power off requested, waiting for the calculator to read the reply...");
 }
 
 void cmdConfigure() {
@@ -658,6 +684,9 @@ void setup() {
     delay(3000);
     Serial.println("\n=== TI-84 AI Firmware ===");
     Serial.printf("PIN_TIP=%d, PIN_RING=%d\n", PIN_TIP, PIN_RING);
+    Serial.printf("PSRAM found=%d size=%u free=%u heap free=%u\n",
+                  (int)psramFound(), (unsigned)ESP.getPsramSize(),
+                  (unsigned)ESP.getFreePsram(), (unsigned)ESP.getFreeHeap());
     Serial.flush();
 
     Serial.println("Loading credentials...");
@@ -709,5 +738,20 @@ void loop() {
     if (startConfigFlag && !responseReady) {
         startConfigFlag = false;
         WifiManager::startConfigPortal();
+    }
+
+    // Power off a little after the calculator has read the "CHIP OFF" reply (or after a timeout).
+    // loop() keeps running in between, so the link transfer can finish first.
+    if (powerOffPending) {
+        if (powerOffAt == 0 && !responseReady) {
+            powerOffAt = millis() + kPowerOffGraceMs;
+            Serial.println("Reply read by calculator, powering off in 2 s");
+        }
+        const bool graceOver = powerOffAt != 0 && (long)(millis() - powerOffAt) >= 0;
+        const bool timedOut = millis() - powerOffRequestedAt > kPowerOffReplyTimeoutMs;
+        if (graceOver || timedOut) {
+            if (timedOut && !graceOver) Serial.println("Calculator never read the reply, powering off anyway");
+            powerOffChip();
+        }
     }
 }

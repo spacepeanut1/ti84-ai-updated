@@ -5,6 +5,7 @@
 #include "mbedtls/base64.h"
 #include "camera_pins.h"
 #include "config.h"
+#include "esp_heap_caps.h"
 
 namespace Camera {
 
@@ -76,7 +77,7 @@ static bool storeLastCapture(camera_fb_t *fb) {
 bool init() {
     if (initialized) return true;
 
-    camera_config_t config;
+    camera_config_t config = {};
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer   = LEDC_TIMER_0;
     config.pin_d0       = Y2_GPIO_NUM;
@@ -111,11 +112,36 @@ bool init() {
         config.fb_location  = CAMERA_FB_IN_DRAM;
     }
 
+    Serial.printf("cam init: frame=%d q=%d heap free=%u, biggest DMA block=%u, psram free=%u\n",
+                  (int)config.frame_size, (int)config.jpeg_quality,
+                  (unsigned)ESP.getFreeHeap(),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+                  (unsigned)ESP.getFreePsram());
+
     esp_err_t err = esp_camera_init(&config);
+    if (err != ESP_OK) {
+        static const framesize_t tries[] = {
+            FRAMESIZE_VGA, FRAMESIZE_CIF, FRAMESIZE_QVGA, FRAMESIZE_QVGA
+        };
+        for (size_t i = 0; i < sizeof(tries) / sizeof(tries[0]) && err != ESP_OK; i++) {
+            Serial.printf("Camera init failed: 0x%x, trying frame size %d\n", err, (int)tries[i]);
+            esp_camera_deinit();
+            delay(200);
+            config.frame_size = tries[i];
+            config.jpeg_quality = 12;
+            err = esp_camera_init(&config);
+        }
+    }
     if (err != ESP_OK) {
         Serial.printf("Camera init failed: 0x%x\n", err);
         return false;
     }
+    Serial.printf("cam init: frame=%d q=%d heap free=%u, biggest DMA block=%u, psram free=%u, biggest psram block=%u\n",
+                  (int)config.frame_size, (int)config.jpeg_quality,
+                  (unsigned)ESP.getFreeHeap(),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+                  (unsigned)ESP.getFreePsram(),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
 
     sensor_t *s = esp_camera_sensor_get();
     if (s) {

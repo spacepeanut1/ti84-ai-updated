@@ -69,7 +69,8 @@ void appendJsonString(String &out, const String &value) {
 }
 
 bool shouldStoreResponse(const RequestOptions &options) {
-    return !options.isVision && options.updateConversationState;
+    // Photo answers are stored too, so the calculator can reply to them.
+    return options.updateConversationState;
 }
 
 bool shouldUsePreviousResponse(const RequestOptions &options) {
@@ -132,7 +133,6 @@ String buildTextRequestBody(const RequestOptions &options) {
 
     doc["model"] = OPENAI_MODEL;
     doc["instructions"] = options.instructions;
-    doc["temperature"] = kRequestTemperature;
     doc["max_output_tokens"] = kMaxOutputTokens;
     doc["store"] = shouldStoreResponse(options);
 
@@ -172,9 +172,8 @@ String buildVisionRequestBody(const RequestOptions &options) {
     body += options.imageBase64;
     body += "\"}]}],\"max_output_tokens\":";
     body += String(kMaxOutputTokens);
-    body += ",\"temperature\":";
-    body += String(kRequestTemperature, 1);
-    body += ",\"store\":false}";
+    body += ",\"store\":";
+    body += shouldStoreResponse(options) ? "true}" : "false}";
     return body;
 }
 
@@ -375,7 +374,8 @@ String reply(const String &prompt) {
 }
 
 String solveImage(const String &imageBase64) {
-    return chat("", imageBase64, false, false);
+    clearConversation();                          // a photo starts a new conversation
+    return chat("", imageBase64, false, true);    // keep it so Reply can follow up
 }
 
 }  // namespace OpenAI

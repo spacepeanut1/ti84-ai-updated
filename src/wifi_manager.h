@@ -6,7 +6,6 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include "esp_eap_client.h"
-#include "esp_wifi.h"
 #include "config.h"
 #include "camera.h"
 #include "web_ui.h"
@@ -61,18 +60,76 @@ void sendJpegResponse(WebServer &server, const uint8_t *jpegData, size_t jpegLen
     server.client().write(jpegData, jpegLen);
 }
 
+// Some browsers send form text as Windows-1252 instead of UTF-8 (a typed curly apostrophe arrives
+// as the single byte 0x92). WiFi names must be UTF-8, so if the bytes are not valid UTF-8 we
+// convert them from Windows-1252.
+static const uint16_t kCp1252[32] = {
+    0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+    0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
+    0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+    0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178};
+
+static bool isValidUtf8(const String &s) {
+    const size_t n = s.length();
+    for (size_t i = 0; i < n;) {
+        const uint8_t c = (uint8_t)s[i];
+        size_t extra;
+        if (c < 0x80) extra = 0;
+        else if ((c & 0xE0) == 0xC0) extra = 1;
+        else if ((c & 0xF0) == 0xE0) extra = 2;
+        else if ((c & 0xF8) == 0xF0) extra = 3;
+        else return false;
+        if (extra && i + extra >= n) return false;
+        for (size_t k = 1; k <= extra; k++) {
+            if (((uint8_t)s[i + k] & 0xC0) != 0x80) return false;
+        }
+        i += extra + 1;
+    }
+    return true;
+}
+
+static void appendUtf8(String &out, uint32_t cp) {
+    if (cp < 0x80) {
+        out += (char)cp;
+    } else if (cp < 0x800) {
+        out += (char)(0xC0 | (cp >> 6));
+        out += (char)(0x80 | (cp & 0x3F));
+    } else {
+        out += (char)(0xE0 | (cp >> 12));
+        out += (char)(0x80 | ((cp >> 6) & 0x3F));
+        out += (char)(0x80 | (cp & 0x3F));
+    }
+}
+
+static String fixFormEncoding(const String &in) {
+    if (isValidUtf8(in)) return in;
+    String out;
+    out.reserve(in.length() * 2);
+    for (size_t i = 0; i < in.length(); i++) {
+        const uint8_t c = (uint8_t)in[i];
+        if (c >= 0x80 && c <= 0x9F) appendUtf8(out, kCp1252[c - 0x80]);
+        else appendUtf8(out, c);
+    }
+    return out;
+}
+
 // NVS operations
 
 void loadCredentials() {
     prefs.begin(NVS_NAMESPACE, true);
-    cacheSettings(prefs.getString(NVS_KEY_SSID, ""),
-                  prefs.getString(NVS_KEY_PASS, ""),
+    cacheSettings(fixFormEncoding(prefs.getString(NVS_KEY_SSID, "")),
+                  fixFormEncoding(prefs.getString(NVS_KEY_PASS, "")),
                   prefs.getString(NVS_KEY_APIKEY, ""),
-                  prefs.getString(NVS_KEY_EAP_IDENTITY, ""),
+                  fixFormEncoding(prefs.getString(NVS_KEY_EAP_IDENTITY, "")),
                   prefs.getBool(NVS_KEY_DEBUGAP, DEFAULT_DEBUG_AP_ENABLED),
                   prefs.getUChar(NVS_KEY_CAMPROF, CAM_PROFILE_DEFAULT),
                   prefs.getBool(NVS_KEY_PHOTORECAP, DEFAULT_PHOTO_RECAP_ENABLED));
     prefs.end();
+    Serial.print("SSID bytes (hex):");
+    for (unsigned int i = 0; i < savedSSID.length(); i++) {
+        Serial.printf(" %02X", (uint8_t)savedSSID[i]);
+    }
+    Serial.println();
     Serial.printf("NVS loaded: SSID='%s' EAP='%s' pass_len=%d apikey_len=%d enterprise=%d\n",
                   savedSSID.c_str(), savedEapIdentity.c_str(),
                   savedPass.length(), savedAPIKey.length(), savedEapIdentity.length() > 0);
@@ -327,14 +384,14 @@ void startConfigPortal() {
         state.debugApEnabled = savedDebugApEnabled;
         state.cameraProfile = savedCameraProfile;
         state.photoRecapEnabled = savedPhotoRecapEnabled;
-        configServer.send(200, "text/html", WebUi::renderConfigHtml(state));
+        configServer.send(200, "text/html; charset=utf-8", WebUi::renderConfigHtml(state));
     });
 
     configServer.on("/save", HTTP_POST, []() {
-        const String ssid = configServer.arg("ssid");
-        const String pass = configServer.arg("pass");
+        const String ssid = fixFormEncoding(configServer.arg("ssid"));
+        const String pass = fixFormEncoding(configServer.arg("pass"));
         const String apikey = configServer.arg("apikey");
-        const String eapIdentity = configServer.arg("eap_identity");
+        const String eapIdentity = fixFormEncoding(configServer.arg("eap_identity"));
         const bool debugApEnabled = configServer.hasArg("debugap");
         const bool photoRecapEnabled = configServer.hasArg("photo_recap");
         const uint8_t cameraProfile =
@@ -354,7 +411,7 @@ void startConfigPortal() {
                      debugApEnabled,
                      cameraProfile,
                      photoRecapEnabled);
-        configServer.send(200, "text/html", WebUi::SAVED_HTML);
+        configServer.send(200, "text/html; charset=utf-8", WebUi::SAVED_HTML);
         delay(2000);
         ESP.restart();
     });
