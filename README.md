@@ -4,10 +4,10 @@ Custom firmware for a modded TI-84 Plus with an internal Seeed Studio XIAO ESP32
 
 ## Features
 
-- Send typed prompts to a vision-capable OpenAI model from the calculator
-- Reply to continue a conversation with context from previous messages
+- Send typed prompts to a OpenAI model GPT 6.1 Luna from the calculator
+- Reply to continue a conversation with context from previous messages or photos
 - Take a photo and have it solved automatically
-- Scroll through long responses line by line
+- Scroll through long responses line by line up to 160 lines
 - Web config portal for WiFi, API key, camera quality, and debug AP settings
 - Three camera quality profiles: Fast (VGA), Balanced (SXGA), Sharp (UXGA)
 - Camera debug hotspot (TI84CAM) with live preview page on port 81
@@ -15,14 +15,16 @@ Custom firmware for a modded TI-84 Plus with an internal Seeed Studio XIAO ESP32
 - Settings stored in ESP32 flash (NVS) and persist across reboots
 - One-command program install via `Send({1})` with automatic retry
 - Auto-reconnect and DNS recovery for flaky WiFi
+- turns off when promted to save battery
+- able to connect to wifi with special characters
 
 ## Hardware
 
 | Part | Details |
 |------|---------|
-| Calculator | TI-84 Plus (non-CE) |
+| Calculator | TI-84 Plus (non-CE) or TI-83 Plus|
 | Microcontroller | Seeed Studio XIAO ESP32S3 Sense |
-| Camera | OV5640 |
+| Camera | OV5640 or OV3360|
 | Connection | Internal wiring to calculator link port |
 
 ## Wiring
